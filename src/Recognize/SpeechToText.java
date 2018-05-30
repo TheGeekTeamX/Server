@@ -25,7 +25,7 @@ public class SpeechToText {
 		String translatedRow = null;
 
 		// Configure GoogleCredential
-		FileInputStream credentialsStream = new FileInputStream("My First Project-fa257743d788.json");
+		FileInputStream credentialsStream = new FileInputStream("C:\\Users\\project06\\Desktop\\GoogleCer.json");
 		GoogleCredentials credentials = GoogleCredentials.fromStream(credentialsStream);
 		FixedCredentialsProvider credentialsProvider = FixedCredentialsProvider.create(credentials);
 
