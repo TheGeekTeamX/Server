@@ -169,7 +169,8 @@ public class DBManager {
 	
 	public String getProfilePictureUrlByUserId(int userId)
 	{
-		return (this.getUserProfilePicture(userId)).getProfilePictureUrl();
+		ProfilePicture pp = this.getUserProfilePicture(userId);
+		return pp != null ? pp.getProfilePictureUrl() : "";
 	}
 	
 	//DataSet

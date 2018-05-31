@@ -1,15 +1,22 @@
 package Boot;
 
 
+
+
 import MVC.*;
+import Tools.BytesHandler;
+
 
 public class Run {
 
 	public static void main(String[] args) throws InterruptedException {
 		
+		
 		/*Test t = new Test();
-		t.test("/Images/1.jpg");*/
-
+		t.test();*/
+		
+		/*BytesHandler bytesHandler = new BytesHandler();
+		bytesHandler.FromImageToByteArray("./Images/1.jpg", "jpg");*/
 		
 		
 		lunchServer(args);
@@ -21,16 +28,13 @@ public class Run {
 	{
 		View view = new View();
 		view.printToConsole("Server Wakes Up...Wait For Acknowledge");
-		String ip = "localhost";
-		int port = 8080;
-		if(args.length == 2)
-		{
-			ip = args[0];
-			port = Integer.parseInt(args[1]);
-			//pathToResources = typeOfSource == 1 ? "C:\\Users\\Sahar Mizrahi\\Desktop\\Study\\FinalProject\\Run\\resources":"C:\\Users\\project06\\Desktop\\OutTalk\\resources";
-		}
-		Model model = Model.getInstance();
+		String ip = args[0];
+		int port = Integer.parseInt(args[1]);
+		String rsrcPath = args[2];
+		Model model = Model.getInstance(rsrcPath);		
 		Controller controller = new Controller(model,view,ip,port);
+		model.addObserver(controller);
+		view.addObserver(controller);
 		controller.start();
 	}
 

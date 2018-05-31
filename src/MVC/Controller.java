@@ -104,9 +104,8 @@ public class Controller implements Observer {
 		this.socketHandler = new SocketHandler(connections);
 		this.model = model;
 		this.model.setSocketHandler(socketHandler);
+		this.model.addObserver(this);;
 		this.view = view;
-		model.addObserver(this);
-		view.addObserver(this);
 		executionPool = new PausableThreadPoolExecutor(10, 20, 2, TimeUnit.MINUTES, new ArrayBlockingQueue<>(5));
 	}
 	
@@ -175,8 +174,7 @@ public class Controller implements Observer {
 									connections.put(user.getEmail(), client);
 									checkIfUserHasInvites(user);
 								} else
-									socketHandler.sendToClient(client, "Response",
-											new ErrorResponseData(ErrorType.IncorrectCredentials));
+									socketHandler.sendToClient(client, "Response",new ErrorResponseData(ErrorType.IncorrectCredentials));
 								return;
 							}
 						}
@@ -245,8 +243,10 @@ public class Controller implements Observer {
 	@Override
 	public void update(Observable o, Object arg) {
 		// TODO Auto-generated method stub
+		System.out.println("check1");
 		if(o instanceof Model)
 		{
+			System.out.println("check2");
 			if(arg instanceof String)
 				view.printToConsole(""+arg);
 			

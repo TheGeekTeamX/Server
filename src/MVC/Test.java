@@ -1,28 +1,20 @@
 package MVC;
 
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import java.util.ArrayList;
 
-import javax.imageio.ImageIO;
+import ResponsesEntitys.ProtocolLine;
 
 public class Test {
 	
-	public void test(String s)
+	public void test()
 	{
-
-			try {
-				System.out.println("current: "+s);
-			BufferedImage im = ImageIO.read(getClass().getResource(s));
-				ByteArrayOutputStream baos = new ByteArrayOutputStream();
-				ImageIO.write(im, "jpg", baos);
-				baos.flush();
-				System.out.println("GOOD");
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-
+		/*FilesHandler fh = new FilesHandler();
+		System.out.println("Read Image");
+		byte[] bytes = fh.FromImageToByteArray("C:/Users/Sahar Mizrahi/git/OutTalk/OutTalkServer/OutTalkServer/ResourcesDirectory/Images/1.jpg", "jpg");
+		System.out.println("save image");
+		fh.SaveByteArrayInDestinationAsImage(bytes, "jpg", "C:/Users/Sahar Mizrahi/git/OutTalk/OutTalkServer/OutTalkServer/ResourcesDirectory/Images/testtest.jpg");
+		/*ArrayList<ProtocolLine> arr = fh.fromTextFileToProtocol("/Protocols/2010.txt");
+		System.out.println(arr);*/
 			
 			
 	}

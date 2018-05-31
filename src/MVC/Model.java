@@ -15,13 +15,14 @@ import Responses.*;
 import ResponsesEntitys.EventData;
 import ResponsesEntitys.ProtocolLine;
 import ResponsesEntitys.UserData;
-import Tools.BytesHandler;
 
 public class Model extends Observable {
 	private static Model instance;
 	private DBManager dbManager;
 	private SocketHandler socketHandler;
 	private RecognizeManager recognizeManager;
+	private FilesHandler filesHandler;
+	
 	
 	
 	public SocketHandler getSocketHandler() {
@@ -43,11 +44,11 @@ public class Model extends Observable {
 	}
 	
 
-	public static Model getInstance()
+	public static Model getInstance(String path)
 	{
 		if(instance == null)
 		{
-			instance = new Model(DBManager.getInstance());
+			instance = new Model(DBManager.getInstance(),path);
 			instance.init();
 		}
 		return instance;
@@ -60,10 +61,11 @@ public class Model extends Observable {
 	public DBManager getDbManager() {
 		return dbManager;
 	}
-	public Model(DBManager dbm) {
+	public Model(DBManager dbm,String path) {
 		super();
 		this.dbManager = dbm;
 		recognizeManager = new RecognizeManager();
+		filesHandler = new FilesHandler(path);
 	}
 
 	public ResponseData EventProtocol(EventProtocolRequestData reqData,User user) {
@@ -71,8 +73,7 @@ public class Model extends Observable {
 		String protocolName = dbManager.getRelatedEventProtocol(reqData.getEventID());
 		if (protocolName == null || protocolName.equals(""))
 			return new ErrorResponseData(ErrorType.ProtocolIsNotExist);
-		ArrayList<ProtocolLine> protocol = BytesHandler
-				.fromTextFileToProtocol(protocolName);
+		ArrayList<ProtocolLine> protocol = filesHandler.fromTextFileToProtocol(""+reqData.getEventID()+".txt");
 		return protocol != null ? new EventProtocolResponseData(reqData.getEventID(), protocol)
 				: new ErrorResponseData(ErrorType.TechnicalError);
 	}
@@ -90,7 +91,8 @@ public class Model extends Observable {
 		// create Event
 		Event e = new Event(user, reqData.getTitle(), new Date(Calendar.getInstance().getTime().getTime()).toString(),
 				0, 0, reqData.getDescription());
-		if (!(dbManager.addToDataBase(e) > 0))
+		int id = dbManager.addToDataBase(e);
+		if (id < 0)
 			return new ErrorResponseData(ErrorType.TechnicalError);
 		// create UserEvent
 		LinkedList<UserData> participantsUserData = getParticipantsUserData(e);
@@ -100,7 +102,7 @@ public class Model extends Observable {
 		});
 		// send invites
 		socketHandler.sendEventInventationToUsers(getEventData(e, participantsUserData), participantsUserData);
-		return new BooleanResponseData(true);
+		return new CreateEventResponseData(id);
 	}
 	
 	public ResponseData IsUserExist(IsUserExistRequestData reqData,User user) {
@@ -118,7 +120,7 @@ public class Model extends Observable {
 			return new ErrorResponseData(ErrorType.UserHasNoProfilePicture);
 		else
 		{
-			byte[] arr = BytesHandler.FromImageToByteArray(pp.getProfilePictureUrl(),"jpg");
+			byte[] arr = filesHandler.FromImageToByteArray(user.getId()+".jpg","jpg");
 			if(arr != null && arr.length > 0)
 				return new ProfilePictureResponseData(arr);
 			return new ErrorResponseData(ErrorType.TechnicalError);
@@ -136,7 +138,7 @@ public class Model extends Observable {
 				return new ErrorResponseData(ErrorType.TechnicalError);
 			byte[] bytes = reqData.getImageBytes();
 			if(bytes != null)
-				BytesHandler.SaveByteArrayInDestinationAsImage(bytes, "jpg", "/Images/"+u.getId()+".jpg");
+				filesHandler.SaveByteArrayInDestinationAsImage(bytes, "jpg", "/Images/"+u.getId()+".jpg");
 			if(dbManager.addToDataBase(new Credential(u, reqData.getCredential())) < 0)
 				return new ErrorResponseData(ErrorType.TechnicalError);
 			return new BooleanResponseData(true);
@@ -325,13 +327,13 @@ public class Model extends Observable {
 		ProfilePicture pp = dbManager.getUserProfilePicture(user.getId());
 		if(pp == null)
 		{
-			pp = new ProfilePicture(user, "/Images/"+user.getId()+".jpg");
+			pp = new ProfilePicture(user,user.getId()+".jpg");
 			if(dbManager.addToDataBase(pp) < 0)
 				return new ErrorResponseData(ErrorType.TechnicalError);
 		}
 		if(bytes == null)
 			return new ErrorResponseData(ErrorType.TechnicalError);
-		return BytesHandler.SaveByteArrayInDestinationAsImage(bytes, "jpg", pp.getProfilePictureUrl()) ? new BooleanResponseData(true) : new ErrorResponseData(ErrorType.TechnicalError);
+		return filesHandler.SaveByteArrayInDestinationAsImage(bytes, "jpg", user.getId()+".jpg") ? new BooleanResponseData(true) : new ErrorResponseData(ErrorType.TechnicalError);
 		
 	}
 	
@@ -377,7 +379,7 @@ public class Model extends Observable {
 	
 	private void saveNewProtocol(ArrayList<ProtocolLine> protocol,Event event,LinkedList<UserData> list)
 	{
-		BytesHandler.fromProtocolToTextFile(protocol, "/Protocols/"+event.getId()+".txt");
+		filesHandler.fromProtocolToTextFile(protocol, event.getId()+".txt");
 		event.setIsConverted(1);
 		dbManager.editInDataBase(event.getId(), DBEntityType.Event, event);
 		//notify
