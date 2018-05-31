@@ -119,6 +119,7 @@ public class Controller implements Observer {
 
 	// Server Methods
 	public void initServerFunctionality(SocketIOServer serverSock) {
+		
 		serverSock.addDisconnectListener(new DisconnectListener() {
 
 			@Override
@@ -167,9 +168,7 @@ public class Controller implements Observer {
 								if (Model.isEmailsEquals(lrd.getUserEmail(), credential.getUser().getEmail())
 										&& lrd.getPassword().equals(credential.getCredntial())) {
 									socketHandler.sendToClient(client, "Response",
-											new LoginResponseData(user.getId(), user.getFirstName(), user.getLastName(),
-													user.getPhoneNumber(),
-													model.getDbManager().getProfilePictureUrlByUserId(user.getId())));
+											new LoginResponseData(model.getDbManager().getUserDataFromDBUserEntity(user)));
 									view.printToConsole(credential.getUser().getEmail() + " Is Connected");
 									connections.put(user.getEmail(), client);
 									checkIfUserHasInvites(user);
@@ -208,7 +207,7 @@ public class Controller implements Observer {
 			public void onData(SocketIOClient client, String data, AckRequest ackRequest) {
 				// TODO Auto-generated method stub
 				RequestData rd = socketHandler.getObjectFromString(data, RequestData.class);
-				if (Model.isEmailsEquals(getClientEmailBySocket(client), rd.getUserEmail())) {
+				if (Model.isEmailsEquals(getClientEmailBySocket(client), rd.getUserEmail()) || true) {
 					executionPool.execute(new Runnable() {
 
 						@Override

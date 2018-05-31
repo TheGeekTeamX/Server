@@ -45,7 +45,6 @@ public class FilesHandler {
 	public byte[] FromImageToByteArray(String name,String format)
 	{
 		try {
-			System.out.println(path+"Images\\"+name);
 			BufferedImage im = ImageIO.read(new File(path+"Images\\"+name));
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			ImageIO.write(im, "jpg", baos);
@@ -61,21 +60,7 @@ public class FilesHandler {
 	
 	public Boolean SaveByteArrayInDestinationAsImage(byte[] arr,String format,String dest)
 	{
-		/*try {
-			getClass();
-			getClass().getClassLoader();
-			File f = new File("./ResourcesDirectory/Images/1test1.jpg");//Good in Eclipse, not good in Batch
-			FileOutputStream fos = new FileOutputStream(f);
-			fos.write(arr);
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} 
-		return true;*/
-		
+	
 		ByteArrayInputStream in = new ByteArrayInputStream(arr);
 		try {
 			BufferedImage bi = ImageIO.read(in);

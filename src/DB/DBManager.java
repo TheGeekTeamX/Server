@@ -125,7 +125,8 @@ public class DBManager {
 	
 	public UserData getUserDataFromDBUserEntity(User user)
 	{
-		return new UserData(user.getFirstName(), user.getLastName(), user.getEmail(), getProfilePictureUrlByUserId(user.getId()), user.getPhoneNumber());
+		DataSet ds = getDataSetByUserId(user.getId());
+		return new UserData(user.getId(),user.getFirstName(), user.getLastName(), user.getEmail(), getProfilePictureUrlByUserId(user.getId()), user.getPhoneNumber(),ds == null ? 0 : ds.getLengthOfRecorcds());
 	}
 	
 	//UserEvent
