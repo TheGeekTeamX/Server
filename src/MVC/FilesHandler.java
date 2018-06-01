@@ -39,7 +39,6 @@ public class FilesHandler {
 	public FilesHandler(String path) {
 		super();
 		this.path = path.contains("_") ? path.replace("_", " ") : path;
-		System.out.println(this.path);
 	}
 
 	public byte[] FromImageToByteArray(String name,String format)

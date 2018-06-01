@@ -33,8 +33,6 @@ public class Run {
 		String rsrcPath = args[2];
 		Model model = Model.getInstance(rsrcPath);		
 		Controller controller = new Controller(model,view,ip,port);
-		model.addObserver(controller);
-		view.addObserver(controller);
 		controller.start();
 	}
 

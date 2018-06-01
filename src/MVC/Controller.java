@@ -104,9 +104,10 @@ public class Controller implements Observer {
 		this.socketHandler = new SocketHandler(connections);
 		this.model = model;
 		this.model.setSocketHandler(socketHandler);
-		this.model.addObserver(this);;
 		this.view = view;
 		executionPool = new PausableThreadPoolExecutor(10, 20, 2, TimeUnit.MINUTES, new ArrayBlockingQueue<>(5));
+		this.view.addObserver(this);
+		this.model.addObserver(this);
 	}
 	
 	private String getClientEmailBySocket(SocketIOClient client) {

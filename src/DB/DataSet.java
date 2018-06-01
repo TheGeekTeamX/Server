@@ -31,6 +31,14 @@ public class DataSet implements IDBEntity {
 
 
 
+	public DataSet() {
+		super();
+		// TODO Auto-generated constructor stub
+	}
+
+
+
+
 	public void setId(int id) {
 		this.id = id;
 	}
