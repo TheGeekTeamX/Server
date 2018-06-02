@@ -38,7 +38,7 @@ public class SocketHandler {
 	public void sendEventInventationToUsers(EventData ed, List<UserData> participants) {
 		participants.forEach(p -> {
 			SocketIOClient sock = connections.get(p.getEmail());
-			if (sock != null) {
+			if (sock != null && !Model.isEmailsEquals(p.getEmail(), ed.getAdminMail())) {
 				sendToClient(sock, "Notification",
 						new EventInvitationNotificationData(ed));
 			}

@@ -58,7 +58,21 @@ public class DBManager {
 		startSession();
 		ArrayList<UserEvent> userEventList = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where UserId = %d and Answer = 1" , userId)).list();
 		closeSession();
-		LinkedList<EventData> eventsList = new LinkedList<>();
+		ArrayList<Event> eventsList = new ArrayList<>();
+		userEventList.forEach(ue -> {
+			eventsList.add(ue.getEvent());
+		});
+		LinkedList<EventData> eventDataList = new LinkedList<>();
+		eventsList.forEach(e -> {
+			List<User> l = getPariticpants(e.getId());
+			LinkedList<UserData> userDataList = new LinkedList<>();
+			l.forEach(u -> {
+				userDataList.add(getUserDataFromDBUserEntity(u));
+			});
+			getEventDataByEvent(e, userDataList);
+		});
+		return eventDataList;
+		/*LinkedList<EventData> eventsList = new LinkedList<>();
 		userEventList.forEach(ue->{
 			ArrayList<User> usersList = getPariticpants(ue.getEvent().getId());
 			ArrayList<UserData> usersDataList = new ArrayList<>();
@@ -66,11 +80,10 @@ public class DBManager {
 				usersDataList.add(getUserDataFromDBUserEntity(u));
 			});
 			eventsList.add(getEventDataByEvent(ue.getEvent(), usersDataList));
-		});
+		});*/
 		
 
 
-		return eventsList;
 	}
 	
 	public EventData getEventDataByEvent(Event e, List<UserData> udlist)
@@ -149,10 +162,19 @@ public class DBManager {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public ArrayList<UserEvent> getUserEventByEventId(int eventId)
+	public ArrayList<UserEvent> getParticipantsByEventId(int eventId)
 	{
 		startSession();
 		ArrayList<UserEvent> usersEvent = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where EventId = %d and Answer = 1", eventId)).list();
+		closeSession();
+		return usersEvent;
+	}
+	
+	@SuppressWarnings("unchecked")
+	public ArrayList<UserEvent> getUnAnsweredUserEventByEventId(int eventId)
+	{
+		startSession();
+		ArrayList<UserEvent> usersEvent = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where EventId = %d and Answer = 0", eventId)).list();
 		closeSession();
 		return usersEvent;
 	}

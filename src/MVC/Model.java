@@ -6,9 +6,14 @@ import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Observable;
+
+import com.corundumstudio.socketio.SocketIOClient;
+import com.sun.xml.bind.v2.runtime.unmarshaller.XsiNilLoader.Array;
+
 import DB.*;
 import Enums.DBEntityType;
 import Enums.ErrorType;
+import Notifications.EventInvitationNotificationData;
 import Recognize.RecognizeManager;
 import Requests.*;
 import Responses.*;
@@ -68,6 +73,19 @@ public class Model extends Observable {
 		filesHandler = new FilesHandler(path);
 	}
 
+	public ResponseData Login(LoginRequestData lrd , User u)
+	{
+		Credential credential = dbManager.getCredential(u.getId());
+		if(credential != null)
+		{
+			if(credential.getCredntial().compareTo(lrd.getPassword())==0)
+				return new LoginResponseData(dbManager.getUserDataFromDBUserEntity(u));
+			else
+				return new ErrorResponseData(ErrorType.IncorrectCredentials);
+		}
+		return new ErrorResponseData(ErrorType.TechnicalError);
+	}
+	
 	public ResponseData EventProtocol(EventProtocolRequestData reqData,User user) {
 		notifyObservers(reqData.getUserEmail() + " Send EventProtocolRequest");
 		String protocolName = dbManager.getRelatedEventProtocol(reqData.getEventID());
@@ -79,7 +97,31 @@ public class Model extends Observable {
 	}
 
 	public ResponseData CreateEvent(CreateEventRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send CreateEventRequest");
+		
+		ArrayList<String> participantsEmail = (ArrayList<String>) reqData.getUsersEmails();
+		//Add Event to DB
+		Event event = new Event(user, reqData.getTitle(), new Date(Calendar.getInstance().getTime().getTime()).toString(), 0, 0, reqData.getDescription());
+		int eventId = dbManager.addToDataBase(event);
+		if(eventId < 0)
+			return new ErrorResponseData(ErrorType.TechnicalError);
+		//Add UserEvents
+		ArrayList<UserData> usersDataList = new ArrayList<>();
+		participantsEmail.forEach(p-> {
+			User u = dbManager.getUser(p);
+			if(u != null)
+			{
+				usersDataList.add(dbManager.getUserDataFromDBUserEntity(u));
+				int id = dbManager.addToDataBase(new UserEvent(u,event,0));
+			}
+		});
+		dbManager.addToDataBase(new UserEvent(user,event,1));
+		usersDataList.add(dbManager.getUserDataFromDBUserEntity(user));
+		//Send Invites
+		EventData ed = dbManager.getEventDataByEvent(event, usersDataList);
+		usersDataList.remove(user);
+		socketHandler.sendEventInventationToUsers(ed, usersDataList);
+		return new CreateEventResponseData(eventId);
+		/*notifyObservers(reqData.getUserEmail() + " Send CreateEventRequest");
 		ArrayList<String> participantsEmail = (ArrayList<String>) (reqData.getUsersEmails());
 		LinkedList<User> participants = new LinkedList<>();
 		participantsEmail.forEach(pe -> {
@@ -95,14 +137,21 @@ public class Model extends Observable {
 		if (id < 0)
 			return new ErrorResponseData(ErrorType.TechnicalError);
 		// create UserEvent
-		LinkedList<UserData> participantsUserData = getParticipantsUserData(e);
+		LinkedList<UserData> participantsUserData = new LinkedList<>();
 		participants.forEach(p -> {
 			int answer = isEmailsEquals(p.getEmail(), user.getEmail()) ? 1 : 0;
 			dbManager.addToDataBase(new UserEvent(p, e, answer));
+			participantsUserData.add(dbManager.getUserDataFromDBUserEntity(p));
 		});
 		// send invites
-		socketHandler.sendEventInventationToUsers(getEventData(e, participantsUserData), participantsUserData);
-		return new CreateEventResponseData(id);
+		ArrayList<UserEvent> ueList = dbManager.getUnAnsweredUserEventByEventId(id);
+		ArrayList<UserData> udList = new ArrayList<>();
+		ueList.forEach(uel -> {
+			if(!isEmailsEquals(uel.getUser().getEmail(), e.getAdmin().getEmail()))
+				udList.add(dbManager.getUserDataFromDBUserEntity(uel.getUser()));
+		});
+		socketHandler.sendEventInventationToUsers(getEventData(e, participantsUserData), udList);
+		return new CreateEventResponseData(id);*/
 	}
 	
 	public ResponseData IsUserExist(IsUserExistRequestData reqData,User user) {
@@ -284,7 +333,7 @@ public class Model extends Observable {
 			return new ErrorResponseData(ErrorType.EventIsNotExist);
 		if (event.getAdmin().getId() == user.getId()) {
 			event.setIsFinished(1);
-			ArrayList<UserEvent> usersEvent = dbManager.getUserEventByEventId(event.getId());
+			ArrayList<UserEvent> usersEvent = dbManager.getParticipantsByEventId(event.getId());
 			usersEvent.forEach(ue -> {
 				if (ue.getAnswer() == 0)// didn't answer yet
 				{
@@ -292,7 +341,7 @@ public class Model extends Observable {
 					dbManager.editInDataBase(ue.getId(), DBEntityType.UserEvent, ue);
 				}
 			});
-			if (dbManager.editInDataBase(event.getId(), DBEntityType.Event, event))
+			if (!dbManager.editInDataBase(event.getId(), DBEntityType.Event, event))
 				return new ErrorResponseData(ErrorType.TechnicalError);
 			else {
 				LinkedList<UserData> list = getParticipantsUserData(event);
@@ -301,22 +350,27 @@ public class Model extends Observable {
 					list.remove(ud);
 				socketHandler.sendEventCloseNotificationToUsers(dbManager.getEventDataByEvent(event, list),list);
 				byte[] bytes = reqData.getRecordsBytes();
-				
-				LinkedList<String> usersEmailsString = new LinkedList<>();
-				list.forEach(l -> {
-					usersEmailsString.add(l.getEmail());
-				});
-				Thread t = new Thread(new Runnable() {
-					
-					@Override
-					public void run() {
-						// TODO Auto-generated method stub
-						saveNewProtocol(recognizeManager.SendWavToRecognize(bytes, usersEmailsString),event,list);
+				if(bytes != null)
+				{					
+					System.out.println("Bytes size : "+ bytes != null ? bytes.length : "null");
+					LinkedList<String> usersEmailsString = new LinkedList<>();
+					list.forEach(l -> {
+						usersEmailsString.add(l.getEmail());
+					});
+					Thread t = new Thread(new Runnable() {
 						
-					}
-				});
-				t.start();
-				return new BooleanResponseData(true);
+						@Override
+						public void run() {
+							// TODO Auto-generated method stub
+							saveNewProtocol(recognizeManager.SendWavToRecognize(bytes, usersEmailsString),event,list);
+							
+						}
+					});
+					t.start();
+					return new BooleanResponseData(true);
+				}
+				else
+					return new ErrorResponseData(ErrorType.TechnicalError);
 			}
 		} else
 			return new ErrorResponseData(ErrorType.UserIsNotAdmin);
@@ -370,7 +424,7 @@ public class Model extends Observable {
 	private LinkedList<UserData> getParticipantsUserData(Event e)
 	{
 		LinkedList<UserData> list = new LinkedList<>();
-		ArrayList<UserEvent> ueList = dbManager.getUserEventByEventId(e.getId());
+		ArrayList<UserEvent> ueList = dbManager.getParticipantsByEventId(e.getId());
 		ueList.forEach(uel -> {
 			list.add(dbManager.getUserDataFromDBUserEntity(uel.getUser()));
 		});
@@ -384,5 +438,24 @@ public class Model extends Observable {
 		dbManager.editInDataBase(event.getId(), DBEntityType.Event, event);
 		//notify
 		socketHandler.sendProtocolIsReadyNotification(dbManager.getEventDataByEvent(event, list), list);
+	}
+	
+	public void checkAndSendInvitesAfterLogin(SocketIOClient client,User u)
+	{
+		ArrayList<UserEvent> ue = dbManager.getUnAnsweredInvites(u.getId());
+		if(ue != null)
+		{
+			ue.forEach(invite -> {
+				ArrayList<User> usersList = dbManager.getPariticpants(invite.getEvent().getId());
+				if(usersList != null)
+				{
+					ArrayList<UserData> udList = new ArrayList<>();
+					usersList.forEach(user->{
+						udList.add(dbManager.getUserDataFromDBUserEntity(user));
+					});
+					socketHandler.sendToClient(client, "Notification", new EventInvitationNotificationData(dbManager.getEventDataByEvent(invite.getEvent(), udList)));
+				}
+			});
+		}
 	}
 }

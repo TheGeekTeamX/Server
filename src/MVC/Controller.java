@@ -1,5 +1,11 @@
 package MVC;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Observable;
@@ -7,6 +13,7 @@ import java.util.Observer;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import com.corundumstudio.socketio.*;
+import com.corundumstudio.socketio.listener.ConnectListener;
 import com.corundumstudio.socketio.listener.DataListener;
 import com.corundumstudio.socketio.listener.DisconnectListener;
 
@@ -23,7 +30,7 @@ public class Controller implements Observer {
 	private View view;
 	private HashMap<String, SocketIOClient> connections;
 	private SocketHandler socketHandler;
-	
+	private Controller instance;
 	private SocketIOServer serverSock;
 	private PausableThreadPoolExecutor executionPool;
 	
@@ -34,6 +41,7 @@ public class Controller implements Observer {
 		User user = model.getUser(reqData.getUserEmail());
 		if(reqData.getType() != RequestType.CreateUserRequest && user == null)
 			return new ErrorResponseData(ErrorType.UserIsNotExist);
+		view.printToConsole(user.getEmail()+" Send "+reqData.getType());
 		switch (reqData.getType()) {
 		case AddFriendRequest:
 			return model.AddFriend(socketHandler.getObjectFromString(data, AddFriendRequestData.class),user);// checked
@@ -65,6 +73,8 @@ public class Controller implements Observer {
 			return model.IsUserExist(socketHandler.getObjectFromString(data, IsUserExistRequestData.class),user);
 		case LeaveEvent:
 			return model.LeaveEvent(socketHandler.getObjectFromString(data, LeaveEventRequestData.class),user);
+		case LoginRequest:
+			return model.Login(socketHandler.getObjectFromString(data, LoginRequestData.class),user);
 		case ProfilePictureRequest:
 			return model.ProfilePicture(socketHandler.getObjectFromString(data, ProfilePictureRequestData.class),user);
 		case UpdateProfilePictureRequest:
@@ -93,6 +103,7 @@ public class Controller implements Observer {
 	public void start() {
 
 		startServer();
+		startServerToRcieveAudio();
 	}
 
 	// C'tor
@@ -108,11 +119,12 @@ public class Controller implements Observer {
 		executionPool = new PausableThreadPoolExecutor(10, 20, 2, TimeUnit.MINUTES, new ArrayBlockingQueue<>(5));
 		this.view.addObserver(this);
 		this.model.addObserver(this);
+		this.instance = this;
 	}
 	
 	private String getClientEmailBySocket(SocketIOClient client) {
 		for (String email : connections.keySet()) {
-			if (connections.get(email).equals(client))
+			if (connections.get(email).getSessionId().equals(client.getSessionId()))
 				return email;
 		}
 		return null;
@@ -120,108 +132,104 @@ public class Controller implements Observer {
 
 	// Server Methods
 	public void initServerFunctionality(SocketIOServer serverSock) {
-		
-		serverSock.addDisconnectListener(new DisconnectListener() {
+		//Connect - First Connection-On Login/Register requests. Adding client's socket to connection
+		serverSock.addEventListener("Connect", String.class, new DataListener<String>() {
 
+			@Override
+			public void onData(SocketIOClient client, String data, AckRequest ackSender) throws Exception {
+				// TODO Auto-generated method stub
+				instance.executionPool.execute(new Runnable() {
+					@Override
+					public void run() {
+						// TODO Auto-generated method stub
+						RequestData rd = socketHandler.getObjectFromString(data, RequestData.class);
+						connections.put(rd.getUserEmail(), client);
+						view.printToConsole(rd.getUserEmail()+" Connected");
+						ResponseData resData= instance.execute(data);
+						if(resData.getType() == ResponseType.Login)//Success
+							executionPool.execute(new Runnable() {
+								
+								@Override
+								public void run() {
+									// TODO Auto-generated method stub
+									model.checkAndSendInvitesAfterLogin(client, model.getDbManager().getUser(rd.getUserEmail()));
+								}
+							});
+						socketHandler.sendToClient(client, "Response",resData);//After Adding socket to connection, Handle Request
+							
+					}
+				});
+			}
+		});
+		
+		//Disconnecting - Need to delete client's socket from connection
+		serverSock.addDisconnectListener(new DisconnectListener() {
+			
 			@Override
 			public void onDisconnect(SocketIOClient client) {
 				// TODO Auto-generated method stub
-				String email = getClientEmailBySocket(client);
-				if (email != null) {
-					view.printToConsole(email + " Is Disconnected");
-					connections.remove(email);
+				String currentMail = getClientEmailBySocket(client);
+				if(currentMail != null)
+				{
+					view.printToConsole(currentMail+ " Disconnected");
+					connections.remove(currentMail);
 				}
 			}
 		});
-		// Login-First Connection
-		serverSock.addEventListener("Login", String.class, new DataListener<String>() {
-			@Override
-			public void onData(SocketIOClient client, String data, AckRequest ackRequest) {
-				// TODO Auto-generated method stub
-				executionPool.execute(new Runnable() {
-					@Override
-					public void run() {
-						// TODO Auto-generated method stub
-						LoginRequestData lrd = socketHandler.getObjectFromString(data, LoginRequestData.class);
-						Boolean res = Model.isEmailsEquals(getClientEmailBySocket(client), lrd.getUserEmail());
-						if (getClientEmailBySocket(client) != null && res)
-						{
-							socketHandler.sendToClient(client, "Response",
-									new ErrorResponseData(ErrorType.ConnectionIsAlreadyEstablished));
-							return;
-						} else {
-							if (getClientEmailBySocket(client) != null
-									&& !res)
-								connections.remove(getClientEmailBySocket(client));
-							User user = model.getDbManager().getUser(lrd.getUserEmail());
-							if (user == null) {
-								socketHandler.sendToClient(client, "Response",
-										new ErrorResponseData(ErrorType.UserIsNotExist));
-								return;
-							}
-							if (connections.get(user.getEmail()) == null) {
-								Credential credential = model.getDbManager().getCredential(user.getId());
-								if (credential == null) {
-									socketHandler.sendToClient(client, "Response",
-											new ErrorResponseData(ErrorType.TechnicalError));
-									return;
-								}
-								if (Model.isEmailsEquals(lrd.getUserEmail(), credential.getUser().getEmail())
-										&& lrd.getPassword().equals(credential.getCredntial())) {
-									socketHandler.sendToClient(client, "Response",
-											new LoginResponseData(model.getDbManager().getUserDataFromDBUserEntity(user)));
-									view.printToConsole(credential.getUser().getEmail() + " Is Connected");
-									connections.put(user.getEmail(), client);
-									checkIfUserHasInvites(user);
-								} else
-									socketHandler.sendToClient(client, "Response",new ErrorResponseData(ErrorType.IncorrectCredentials));
-								return;
-							}
-						}
-					}
-				});
+		
+		//Reconnecting - Need to update client's socket
+		serverSock.addEventListener("Reconncet", String.class, new DataListener<String>() {
 
+			@Override
+			public void onData(SocketIOClient client, String mail, AckRequest ackSender) throws Exception {
+				// TODO Auto-generated method stub
+				if(!client.getSessionId().equals(connections.get(mail)))
+					connections.replace(mail, client);
 			}
 		});
-		serverSock.addEventListener("Register", String.class, new DataListener<String>() {
+		
+		//Request - Check if user has connection
+		serverSock.addEventListener("Request", String.class, new DataListener<String>() {
 
 			@Override
-			public void onData(SocketIOClient client, String data, AckRequest ackRequest){
+			public void onData(SocketIOClient client, String data, AckRequest ackSender) throws Exception {
 				// TODO Auto-generated method stub
-				CreateUserRequestData reqData = socketHandler.getObjectFromString(data, CreateUserRequestData.class);
-				String email = reqData.getUserEmail();
-				executionPool.execute(new Runnable() {
+				//Check if user has connection
+				instance.executionPool.execute(new Runnable() {
 					
 					@Override
 					public void run() {
-						// TODO Auto-generated method stub
-						ResponseData rd = execute(data);
-						if(rd.getType() == ResponseType.Boolean)
-							connections.put(email, client);
-						socketHandler.sendToClient(client, "Response", rd);
+						// TODO Auto-generated method stub						
+						Boolean isUserHasConnection = getClientEmailBySocket(client) != null ? true : false;
+						if(isUserHasConnection)
+							socketHandler.sendToClient(client, "Response", instance.execute(data));//Handle Request
 					}
 				});
+				
 			}
 		});
-		serverSock.addEventListener("Request", String.class, new DataListener<String>() {
+		
+		/*serverSock.addEventListener("Request", String.class, new DataListener<String>() {
+
 			@Override
-			public void onData(SocketIOClient client, String data, AckRequest ackRequest) {
+			public void onData(SocketIOClient client, String data, AckRequest ackSender) throws Exception {
 				// TODO Auto-generated method stub
-				RequestData rd = socketHandler.getObjectFromString(data, RequestData.class);
-				if (Model.isEmailsEquals(getClientEmailBySocket(client), rd.getUserEmail()) || true) {
-					executionPool.execute(new Runnable() {
-
-						@Override
-						public void run() {
-							// TODO Auto-generated method stub
-							socketHandler.sendToClient(client, "Response", execute(data));
-						}
-					});
-				} else
-					socketHandler.sendToClient(client, "Response", new ErrorResponseData(ErrorType.UserMustToLogin));
+				System.out.println("request" + data);
+				client.sendEvent("Response", "request response");
 
 			}
 		});
+		
+		serverSock.addEventListener("Register", String.class, new DataListener<String>() {
+
+			@Override
+			public void onData(SocketIOClient client, String data, AckRequest ackSender) throws Exception {
+				// TODO Auto-generated method stub
+				System.out.println("register" + data);
+				client.sendEvent("Response", " register response");
+
+			}
+		});*/
 	}
 
 	private void startServer() {
@@ -250,6 +258,131 @@ public class Controller implements Observer {
 			if(arg instanceof String)
 				view.printToConsole(""+arg);
 			
+		}
+	}
+	
+	private void startServerToRcieveAudio() {
+		{
+
+			Thread dataSetThread = new Thread(new Runnable() {
+				
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					while(true)
+					{
+						InetAddress addr;
+						try {
+							addr = InetAddress.getByName(url);
+							ServerSocket socket = new ServerSocket(port+1,50,addr);
+							Socket cs = socket.accept();
+							handleDataSetRecord(cs);
+						} catch ( IOException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+					}
+				}
+			});
+			Thread recordThread = new Thread(new Runnable() {
+				
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					while(true)
+					{
+						InetAddress addr;
+						try {
+							addr = InetAddress.getByName(url);
+							ServerSocket socket = new ServerSocket(port+2,50,addr);
+							Socket cs = socket.accept();
+							handleEventRecord(cs);
+						} catch ( IOException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+					}
+				}
+			});
+			
+			dataSetThread.start();
+			recordThread.start();
+			
+			/*Thread t = new Thread(new Runnable() {
+
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					try {
+						InetAddress addr = InetAddress.getByName("localhost");//TODO: change to server tomorrow!
+						ServerSocket socket = new ServerSocket(2244,50,addr);
+						Socket cs = socket.accept();
+					    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				        int reads = cs.getInputStream().read();
+				        while(reads != -1){
+				            baos.write(reads);
+				            reads = cs.getInputStream().read();
+				            System.out.println(reads);
+				        }
+					    byte[] wavFile = baos.toByteArray();
+					} catch (Exception  e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+				}
+			});
+			t.start();*/
+		}
+	}
+	
+	private void handleDataSetRecord(Socket sock)
+	{
+		//Get User UserId(String) From Socket
+		
+		//Get Bytes Array
+		
+		//Leave it to Sahar
+		
+	    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int reads;
+		try {
+			reads = sock.getInputStream().read();
+			while(reads != -1){
+				baos.write(reads);
+				reads = sock.getInputStream().read();
+				System.out.println(reads);
+			}
+			byte[] wavFile = baos.toByteArray();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
+	private void handleEventRecord(Socket sock)
+	{
+		//Get EventId(int) From Socket
+
+		//Get Bytes Array
+		
+		//Leave it to Sahar
+		
+		
+	    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int reads;
+		try {
+			
+			reads = sock.getInputStream().read();
+			while(reads != -1){
+				baos.write(reads);
+				reads = sock.getInputStream().read();
+				System.out.println(reads);
+			}
+			byte[] wavFile = baos.toByteArray();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
 	}
 
