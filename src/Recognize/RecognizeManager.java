@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -31,9 +32,17 @@ import ResponsesEntitys.ProtocolLine;
 import org.apache.commons.codec.binary.Base64;
 
 public class RecognizeManager {
+	private String path;
 	private static String RecognizeURL = "http://193.106.55.106:5000/create_model_user";
 	private static String RegisterURL = "http://193.106.55.106:5000/create_dataset";
 	private static String PredictURL = "http://193.106.55.106:5000/predict";
+
+	
+	
+	public RecognizeManager(String path) {
+		super();
+		this.path = path;
+	}
 
 	// Send identical record from user to Recognize Service
 	public boolean CreateDataSet(byte[] wavByte, String user) {
@@ -47,7 +56,6 @@ public class RecognizeManager {
 			postParameters.add(new BasicNameValuePair("file", list.get(i)));
 			JSONObject result = CreatePost(RegisterURL, postParameters);
 			String usersRecognize = result.getString("result");
-			System.out.println(usersRecognize);
 
 		}
 		ArrayList<NameValuePair> postParameters2 = new ArrayList<NameValuePair>();
@@ -77,7 +85,7 @@ public class RecognizeManager {
 	 */
 
 	// Send the Wav to recognize service
-	public ArrayList<ProtocolLine> SendWavToRecognize(byte[] wavByte, List<String> usersList) {
+	public ArrayList<ProtocolLine> SendWavToRecognize(byte[] wavByte, List<String> usersList,int eventId) {
 		String usersListStr = "";
 		for (int i = 0; i < usersList.size(); i++)
 			usersListStr += usersList.get(i) + ",";
@@ -88,16 +96,14 @@ public class RecognizeManager {
 		// WavSplitFixedTime ws = new WavSplitFixedTime(wavByte, 8);
 		// List<String> list = ws.getList();
 
-		List<String> list = getWavList(wavByte);
+		List<String> list = getWavList(wavByte,eventId);
 		ArrayList<NameValuePair> postParameters;
 		postParameters = new ArrayList<NameValuePair>();
 		postParameters.add(new BasicNameValuePair("list_users", usersListStr));
 
 		StringBuilder sb = new StringBuilder();
-		for (String str : list) {
-			sb.append(str);
-			sb.append(",");
-		}
+		for(int i=0;i<list.size();i++)
+			sb.append(list.get(i)+",");
 		sb.deleteCharAt(sb.length() - 1);
 		postParameters.add(new BasicNameValuePair("audio_parts", sb.toString()));
 
@@ -106,7 +112,7 @@ public class RecognizeManager {
 		List<String> usersListRecognize = new LinkedList<String>(Arrays.asList(usersRecognize.split(",")));
 
 		pl = BuildProtocol(list, usersListRecognize);
-		System.out.println(result.toString());
+		System.out.println(eventId+" Protocol Is Ready");
 
 		return pl;
 	}
@@ -119,6 +125,7 @@ public class RecognizeManager {
 
 		String currentUser = usersList.size() == 0 ? "" : usersList.get(0);
 		byte[] mergedBytes = null;
+		System.out.println(wavBytes.size());
 		for (int i = 0; i < wavBytes.size(); i++) {
 			if (i + 1 == usersList.size() || !currentUser.equals(usersList.get(i))) {
 				mergedBytes = MergeWavList(wavBytes.subList(startIndex, endIndex + 1), "" + startIndex);
@@ -142,7 +149,10 @@ public class RecognizeManager {
 			} else
 				endIndex = i;
 		}
-
+		pl.forEach(p->{
+			if(p.getText() == null)
+				p.setText("...");
+		});
 		return pl;
 
 	}
@@ -175,42 +185,59 @@ public class RecognizeManager {
 	// Set the record to GoogleSpeechToText
 	private String TranslateWithGoogleService(byte[] wavByte) throws Exception {
 		String res;
-		SpeechToText st = new SpeechToText();
+		SpeechToText st = new SpeechToText(this.path);
 		res = st.getConvertText(wavByte);
 		return res;
 	}
 
 	// Send the wav file to get split voices
-	private List<String> getWavList(byte[] wavFile) {
+	@SuppressWarnings("unchecked")
+	private List<String> getWavList(byte[] wavFile,int eventId) {
 		String root = System.getProperty("user.dir");
-		String python = "python " + root + "\\ResourcesDirectory\\Python\\pydub_splitter.py";
-		Path rootDirectory = FileSystems.getDefault().getPath(root + "\\ResourcesDirectory\\Temp");
+		String python = "python C:\\Users\\project06\\Desktop\\pydub_splitter.py";
+		Path rootDirectory = FileSystems.getDefault().getPath(path+"Temp");
 		Path tempDirectory;
+		Path tempFile;
 		
 		try {
 			// Create temp directory
-			tempDirectory = Files.createTempDirectory(rootDirectory, "Wav");
-			System.out.println("Temporary directory created successfully!");
+			tempDirectory = Files.createTempDirectory(rootDirectory, ""+eventId+"-");
+
 
 			// Create temp files from python
-			Path tempFile = Files.createTempFile(tempDirectory, "temp", "");
-			System.out.println("Temporary wav file created successfully!");
+			tempFile = Files.createTempFile(tempDirectory,  ""+eventId+"-","");
 
+			
 			AudioInputStream audioBuild = AudioSystem.getAudioInputStream(new ByteArrayInputStream(wavFile));
 			AudioSystem.write(audioBuild, AudioFileFormat.Type.WAVE, tempFile.toFile());
 
 			// Python
 			@SuppressWarnings("unused")
 			Process p = Runtime.getRuntime().exec(python + " " + tempFile + " " + tempDirectory + "/");
-			Thread.sleep(2000);
+			p.waitFor();
 
 			// Read wav list from temp folder
 			List<String> wavList = new ArrayList<>();
 			Files.delete(tempFile);
 			File dir = new File(tempDirectory.toUri());
 			File[] directoryListing = dir.listFiles();
+
 			if (directoryListing != null) {
+				Arrays.sort(directoryListing,0, directoryListing.length,  new Comparator<File>()
+				{
+				    @Override
+				    public int compare(File f1, File f2) {
+				        String fileName1 = f1.getName();
+				        String fileName2 = f2.getName();
+				        String[] a1 = fileName1.split("-");
+				        String[] a2 = fileName2.split("-");
+				        int i1 = Integer.parseInt(a1[0]);
+				        int i2 = Integer.parseInt(a2[0]);
+				        return i1-i2;
+				    }
+				});
 				for (File wavChild : directoryListing) {
+					System.out.println(wavChild.getName());
 					Path path = Paths.get(wavChild.getPath());
 					byte[] mergedBytes = Files.readAllBytes(path);
 					wavList.add(Base64.encodeBase64String(mergedBytes));
@@ -219,12 +246,24 @@ public class RecognizeManager {
 				}
 			}
 			Files.delete(tempDirectory);
+			if(wavList.size() == 0)
+			{
+				System.out.println("2 Seconds Logic");
+				WavSplitFixedTime ws = new WavSplitFixedTime(wavFile, 2);
+				wavList = ws.getList();
+			}
+			else
+				System.out.println("Voice Splitter Logic");
 			return wavList;
-			// Files.delete(tempDirectory);
-		} catch (IOException | UnsupportedAudioFileException | InterruptedException e) {
+			//Files.delete(tempDirectory);
+		} catch (IOException | UnsupportedAudioFileException  e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (InterruptedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+
 
 		return null;
 	}

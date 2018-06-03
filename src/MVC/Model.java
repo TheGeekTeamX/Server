@@ -1,5 +1,9 @@
 package MVC;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Date;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -27,6 +31,7 @@ public class Model extends Observable {
 	private SocketHandler socketHandler;
 	private RecognizeManager recognizeManager;
 	private FilesHandler filesHandler;
+	private String path ;
 	
 	
 	
@@ -38,10 +43,6 @@ public class Model extends Observable {
 		this.socketHandler = socketHandler;
 	}
 
-	public EventData getEventData(Event e,List<UserData> udList)
-	{
-		return dbManager.getEventDataByEvent(e, udList);
-	}
 	
 	public User getUser(String email)
 	{
@@ -69,8 +70,9 @@ public class Model extends Observable {
 	public Model(DBManager dbm,String path) {
 		super();
 		this.dbManager = dbm;
-		recognizeManager = new RecognizeManager();
+		recognizeManager = new RecognizeManager(path);
 		filesHandler = new FilesHandler(path);
+		this.path = path;
 	}
 
 	public ResponseData Login(LoginRequestData lrd , User u)
@@ -87,11 +89,7 @@ public class Model extends Observable {
 	}
 	
 	public ResponseData EventProtocol(EventProtocolRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send EventProtocolRequest");
-		String protocolName = dbManager.getRelatedEventProtocol(reqData.getEventID());
-		if (protocolName == null || protocolName.equals(""))
-			return new ErrorResponseData(ErrorType.ProtocolIsNotExist);
-		ArrayList<ProtocolLine> protocol = filesHandler.fromTextFileToProtocol(""+reqData.getEventID()+".txt");
+		ArrayList<ProtocolLine> protocol = filesHandler.fromTextFileToProtocol(reqData.getEventID()+".txt");
 		return protocol != null ? new EventProtocolResponseData(reqData.getEventID(), protocol)
 				: new ErrorResponseData(ErrorType.TechnicalError);
 	}
@@ -115,47 +113,15 @@ public class Model extends Observable {
 			}
 		});
 		dbManager.addToDataBase(new UserEvent(user,event,1));
-		usersDataList.add(dbManager.getUserDataFromDBUserEntity(user));
+		ArrayList<UserData> initialList = new ArrayList<>();
+		initialList.add(dbManager.getUserDataFromDBUserEntity(user));
 		//Send Invites
-		EventData ed = dbManager.getEventDataByEvent(event, usersDataList);
-		usersDataList.remove(user);
+		EventData ed = dbManager.getEventDataByEvent(event, initialList);
 		socketHandler.sendEventInventationToUsers(ed, usersDataList);
 		return new CreateEventResponseData(eventId);
-		/*notifyObservers(reqData.getUserEmail() + " Send CreateEventRequest");
-		ArrayList<String> participantsEmail = (ArrayList<String>) (reqData.getUsersEmails());
-		LinkedList<User> participants = new LinkedList<>();
-		participantsEmail.forEach(pe -> {
-			User u = dbManager.getUser(pe);
-			if (u != null)
-				participants.add(u);
-		});
-		participants.add(user);
-		// create Event
-		Event e = new Event(user, reqData.getTitle(), new Date(Calendar.getInstance().getTime().getTime()).toString(),
-				0, 0, reqData.getDescription());
-		int id = dbManager.addToDataBase(e);
-		if (id < 0)
-			return new ErrorResponseData(ErrorType.TechnicalError);
-		// create UserEvent
-		LinkedList<UserData> participantsUserData = new LinkedList<>();
-		participants.forEach(p -> {
-			int answer = isEmailsEquals(p.getEmail(), user.getEmail()) ? 1 : 0;
-			dbManager.addToDataBase(new UserEvent(p, e, answer));
-			participantsUserData.add(dbManager.getUserDataFromDBUserEntity(p));
-		});
-		// send invites
-		ArrayList<UserEvent> ueList = dbManager.getUnAnsweredUserEventByEventId(id);
-		ArrayList<UserData> udList = new ArrayList<>();
-		ueList.forEach(uel -> {
-			if(!isEmailsEquals(uel.getUser().getEmail(), e.getAdmin().getEmail()))
-				udList.add(dbManager.getUserDataFromDBUserEntity(uel.getUser()));
-		});
-		socketHandler.sendEventInventationToUsers(getEventData(e, participantsUserData), udList);
-		return new CreateEventResponseData(id);*/
 	}
 	
 	public ResponseData IsUserExist(IsUserExistRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send IsUserExistRequest");
 		User otherUser = dbManager.getUser(reqData.getEmail());
 		if (otherUser == null)
 			return new ErrorResponseData(ErrorType.FriendIsNotExist);
@@ -163,21 +129,13 @@ public class Model extends Observable {
 	}
 	
 	public ResponseData ProfilePicture(ProfilePictureRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send ProfilePictureRequest");
-		ProfilePicture pp = dbManager.getUserProfilePicture(user.getId());
-		if (pp == null)
-			return new ErrorResponseData(ErrorType.UserHasNoProfilePicture);
-		else
-		{
-			byte[] arr = filesHandler.FromImageToByteArray(user.getId()+".jpg","jpg");
-			if(arr != null && arr.length > 0)
-				return new ProfilePictureResponseData(arr);
-			return new ErrorResponseData(ErrorType.TechnicalError);
-		}
+		byte[] arr = filesHandler.FromImageToByteArray(user.getId()+".jpg","jpg");
+		if(arr != null && arr.length > 0)
+			return new ProfilePictureResponseData(arr);
+		return new ErrorResponseData(ErrorType.TechnicalError);
 	}
 	
 	public ResponseData CreateUser(CreateUserRequestData reqData) {
-		notifyObservers(reqData.getUserEmail() + " Send CreateUserRequest");
 		User user = dbManager.getUser(reqData.getUserEmail());
 		if(user == null)
 		{			
@@ -197,7 +155,6 @@ public class Model extends Observable {
 	}
 
 	public ResponseData ContactList(ContactsListRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send ContactListRequest");
 		ArrayList<Contact> contactsList = dbManager.getContactsList(user.getId());
 		LinkedList<UserData> list = new LinkedList<>();
 		contactsList.forEach(c -> {
@@ -211,7 +168,6 @@ public class Model extends Observable {
 	}
 
 	public ResponseData EditUser(EditUserRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send EditUserRequest");
 		user.setCountry(reqData.getCountry());
 		user.setPhoneNumber(reqData.getPhoneNumber());
 		user.setFirstName(reqData.getFirstName());
@@ -220,7 +176,6 @@ public class Model extends Observable {
 	}
 
 	public ResponseData EditContactsList(EditContactsListRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send EditContactsListRequest");
 		ArrayList<Contact> currentContactsList = dbManager.getContactsList(user.getId());
 		if (currentContactsList == null || currentContactsList.size() == 0)
 			return new BooleanResponseData(false);
@@ -236,7 +191,6 @@ public class Model extends Observable {
 	}
 
 	public ResponseData ChangePassword(ChangePasswordRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send ChangePasswordRequest");
 		Credential credential = dbManager.getCredential(user.getId());
 		if (credential == null)
 			return new ErrorResponseData(ErrorType.TechnicalError);
@@ -252,7 +206,6 @@ public class Model extends Observable {
 	}
 
 	public ResponseData AddFriend(AddFriendRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send AddFriendRequest");
 		User friend = dbManager.getUser(reqData.getFriendMail());
 		if (friend == null)
 			return new ErrorResponseData(ErrorType.FriendIsNotExist);
@@ -269,7 +222,6 @@ public class Model extends Observable {
 	}
 
 	public ResponseData EventsList(EventsListRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send EventListRequest");
 		LinkedList<EventData> eventsList = dbManager.getEventsList(user.getId());
 		if (eventsList == null)
 			return new ErrorResponseData(ErrorType.UserHasNoEvents);
@@ -277,8 +229,7 @@ public class Model extends Observable {
 	}
 	
 	public ResponseData DeclineEvent(DeclineEventRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send DeclineEventRequest");
-		UserEvent ue = dbManager.getRelatedUserEvent(user.getId(), reqData.getEventId());
+		UserEvent ue = dbManager.getSpecificUserEvent(user.getId(), reqData.getEventId());
 		if (ue == null)
 			return new ErrorResponseData(ErrorType.NoPendingEvents);
 		if (ue.getAnswer() == 0) {
@@ -289,20 +240,17 @@ public class Model extends Observable {
 	}
 
 	public ResponseData LeaveEvent(LeaveEventRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send LeaveEventRequest");
 		Event e = (Event) dbManager.get(reqData.getEventId(), DBEntityType.Event);
 		if (e == null)
 			return new ErrorResponseData(ErrorType.TechnicalError);
 		if (e.getIsFinished() == 0) {
-			UserEvent ue = dbManager.getRelatedUserEvent(user.getId(), reqData.getEventId());
+			UserEvent ue = dbManager.getSpecificUserEvent(user.getId(), reqData.getEventId());
 			if (ue == null)
 				return new ErrorResponseData(ErrorType.NoPendingEvents);
 			else if (ue.getAnswer() == 1)
 			{
 				LinkedList<UserData> list = getParticipantsUserData(e);
 				UserData ud = dbManager.getUserDataFromDBUserEntity(user);
-				if(list.contains(ud))
-					list.remove(ud);
 				socketHandler.sendUserEventNotification(dbManager.getEventDataByEvent(e, list),list,ud,false);
 			}
 		}
@@ -310,8 +258,7 @@ public class Model extends Observable {
 	}
 
 	public ResponseData JoinEvent(ConfirmEventRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send ConfirmEventRequest");
-		UserEvent ue = dbManager.getRelatedUserEvent(user.getId(), reqData.getEventId());
+		UserEvent ue = dbManager.getSpecificUserEvent(user.getId(), reqData.getEventId());
 		if (ue == null)
 			return new ErrorResponseData(ErrorType.NoPendingEvents);
 		if (ue.getAnswer() == 0 || ue.getAnswer() == 2) {
@@ -320,101 +267,80 @@ public class Model extends Observable {
 		}
 		LinkedList<UserData> list = getParticipantsUserData(ue.getEvent());
 		UserData ud = dbManager.getUserDataFromDBUserEntity(user);
-		if(list.contains(ud))
-			list.remove(ud);
 		socketHandler.sendUserEventNotification(dbManager.getEventDataByEvent(ue.getEvent(), list),list,ud,true);
 		return new BooleanResponseData(true);
 	}
 	
-	public ResponseData CloseEvent(CloseEventRequestData reqData,User user) {
-		notifyObservers(reqData.getUserEmail() + " Send CloseEventRequest");
-		Event event = (Event) dbManager.get(reqData.getEventId(), DBEntityType.Event);
-		if (event == null)
-			return new ErrorResponseData(ErrorType.EventIsNotExist);
-		if (event.getAdmin().getId() == user.getId()) {
-			event.setIsFinished(1);
-			ArrayList<UserEvent> usersEvent = dbManager.getParticipantsByEventId(event.getId());
-			usersEvent.forEach(ue -> {
-				if (ue.getAnswer() == 0)// didn't answer yet
-				{
-					ue.setAnswer(2);
-					dbManager.editInDataBase(ue.getId(), DBEntityType.UserEvent, ue);
+	public void CloseEvent(int eventId,byte[] bytes) {
+		//Update Event in DB
+		Event event = (Event) dbManager.get(eventId, DBEntityType.Event);
+		event.setIsFinished(1);
+		dbManager.editInDataBase(eventId, DBEntityType.Event, event);
+		//Send Notifications
+		ArrayList<UserEvent> participants = dbManager.getParticipants(eventId);
+		ArrayList<UserData> usersDataList = new ArrayList<>();
+		if(participants != null)
+		{
+			participants.forEach(p->{
+				usersDataList.add(dbManager.getUserDataFromDBUserEntity(p.getUser()));
+			});
+			socketHandler.sendEventCloseNotificationToUsers(dbManager.getEventDataByEvent(event, usersDataList), usersDataList);
+		}
+		//Send To Recognize
+		if(bytes != null && participants != null)
+		{
+			ArrayList<String> participantsEmails = new ArrayList<>();
+			participants.forEach(p -> {
+				participantsEmails.add(p.getUser().getEmail());
+			});
+			Thread t = new Thread(new Runnable() {
+				
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					ArrayList<ProtocolLine> protocolLines = recognizeManager.SendWavToRecognize(bytes, participantsEmails,eventId);
+					protocolLines.forEach(pl->{
+						System.out.println(pl.toString());
+					});
+					if(protocolLines != null)
+						saveNewProtocol(protocolLines, event, usersDataList);
 				}
 			});
-			if (!dbManager.editInDataBase(event.getId(), DBEntityType.Event, event))
-				return new ErrorResponseData(ErrorType.TechnicalError);
-			else {
-				LinkedList<UserData> list = getParticipantsUserData(event);
-				UserData ud = dbManager.getUserDataFromDBUserEntity(user);
-				if(list.contains(ud))
-					list.remove(ud);
-				socketHandler.sendEventCloseNotificationToUsers(dbManager.getEventDataByEvent(event, list),list);
-				byte[] bytes = reqData.getRecordsBytes();
-				if(bytes != null)
-				{					
-					System.out.println("Bytes size : "+ bytes != null ? bytes.length : "null");
-					LinkedList<String> usersEmailsString = new LinkedList<>();
-					list.forEach(l -> {
-						usersEmailsString.add(l.getEmail());
-					});
-					Thread t = new Thread(new Runnable() {
-						
-						@Override
-						public void run() {
-							// TODO Auto-generated method stub
-							saveNewProtocol(recognizeManager.SendWavToRecognize(bytes, usersEmailsString),event,list);
-							
-						}
-					});
-					t.start();
-					return new BooleanResponseData(true);
-				}
-				else
-					return new ErrorResponseData(ErrorType.TechnicalError);
-			}
-		} else
-			return new ErrorResponseData(ErrorType.UserIsNotAdmin);
+			t.start();
+		}
 	}
 
 	public ResponseData UpdateProfilePicture(UpdateProfilePictureRequestData reqData,User user) {
 		byte[] bytes = reqData.getProfilePictureBytes();
-		ProfilePicture pp = dbManager.getUserProfilePicture(user.getId());
-		if(pp == null)
-		{
-			pp = new ProfilePicture(user,user.getId()+".jpg");
-			if(dbManager.addToDataBase(pp) < 0)
-				return new ErrorResponseData(ErrorType.TechnicalError);
-		}
 		if(bytes == null)
 			return new ErrorResponseData(ErrorType.TechnicalError);
 		return filesHandler.SaveByteArrayInDestinationAsImage(bytes, "jpg", user.getId()+".jpg") ? new BooleanResponseData(true) : new ErrorResponseData(ErrorType.TechnicalError);
 		
 	}
 	
-	public ResponseData DataSet(DataSetRequestData reqData,User user)
+	public void DataSet(int userId, int length, byte[] bytes)
 	{
-		if(reqData.getRecord() == null)
-			return new ErrorResponseData(ErrorType.TechnicalError);
-		DataSet ds = dbManager.getDataSetByUserId(user.getId());
+		Path path = Paths.get(this.path+"testGal.wav");
+		try {
+			Files.write(path, bytes);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}	
+		DataSet ds = dbManager.getDataSetByUserId(userId);
 		if(ds == null)
-		{			
-			ds = new DataSet(user, 0);
-			dbManager.addToDataBase(ds);
-			ds = dbManager.getDataSetByUserId(user.getId());
+		{
+			ds = new DB.DataSet((User)dbManager.get(userId, DBEntityType.User), 0);
+			ds.setId(dbManager.addToDataBase(ds));
 		}
-		Thread t = new Thread(new Runnable() {
-			
-			@Override
-			public void run() {
-				// TODO Auto-generated method stub
-				recognizeManager.CreateDataSet(reqData.getRecord(), user.getEmail());
-			}
-		});
-		t.start();
-		ds.setLengthOfRecorcds(ds.getLengthOfRecorcds() + reqData.getLength());
+		float newLen =ds.getLengthOfRecorcds()+ length/60 + (length%60)/60;
+		System.out.println(newLen);
+		ds.setLengthOfRecorcds(newLen);
 		dbManager.editInDataBase(ds.getId(), DBEntityType.DataSet, ds);
-		return new DataSetResponseData(ds.getLengthOfRecorcds());
+		recognizeManager.CreateDataSet(bytes, ds.getUser().getEmail());
 	}
+	
+	
 
 	public static boolean isEmailsEquals(String mail1, String mail2) {
 		
@@ -424,14 +350,14 @@ public class Model extends Observable {
 	private LinkedList<UserData> getParticipantsUserData(Event e)
 	{
 		LinkedList<UserData> list = new LinkedList<>();
-		ArrayList<UserEvent> ueList = dbManager.getParticipantsByEventId(e.getId());
+		ArrayList<UserEvent> ueList = dbManager.getParticipants(e.getId());
 		ueList.forEach(uel -> {
 			list.add(dbManager.getUserDataFromDBUserEntity(uel.getUser()));
 		});
 		return list;
 	}
 	
-	private void saveNewProtocol(ArrayList<ProtocolLine> protocol,Event event,LinkedList<UserData> list)
+	private void saveNewProtocol(ArrayList<ProtocolLine> protocol,Event event,List<UserData> list)
 	{
 		filesHandler.fromProtocolToTextFile(protocol, event.getId()+".txt");
 		event.setIsConverted(1);
@@ -439,19 +365,19 @@ public class Model extends Observable {
 		//notify
 		socketHandler.sendProtocolIsReadyNotification(dbManager.getEventDataByEvent(event, list), list);
 	}
-	
+
 	public void checkAndSendInvitesAfterLogin(SocketIOClient client,User u)
 	{
-		ArrayList<UserEvent> ue = dbManager.getUnAnsweredInvites(u.getId());
+		ArrayList<UserEvent> ue = dbManager.getUserEventsWithSpecificAnswer(u.getId(),0);
 		if(ue != null)
 		{
 			ue.forEach(invite -> {
-				ArrayList<User> usersList = dbManager.getPariticpants(invite.getEvent().getId());
+				ArrayList<UserEvent> usersList = dbManager.getParticipants(invite.getEvent().getId());
 				if(usersList != null)
 				{
 					ArrayList<UserData> udList = new ArrayList<>();
-					usersList.forEach(user->{
-						udList.add(dbManager.getUserDataFromDBUserEntity(user));
+					usersList.forEach(userEvent->{
+						udList.add(dbManager.getUserDataFromDBUserEntity(userEvent.getUser()));
 					});
 					socketHandler.sendToClient(client, "Notification", new EventInvitationNotificationData(dbManager.getEventDataByEvent(invite.getEvent(), udList)));
 				}

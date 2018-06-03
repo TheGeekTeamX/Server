@@ -80,7 +80,6 @@ public class FilesHandler {
 		ArrayList<ProtocolLine> list = new ArrayList<>();
 		Scanner sc = null;
 			try {
-				System.out.println(path);
 				sc = new Scanner(new File(path+"Protocols/"+name));
 				sc.useDelimiter("\\,");
 				while(sc.hasNext())

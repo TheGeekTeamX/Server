@@ -25,31 +25,90 @@ public class DBManager {
 	private Session session;
 	private static DBManager instance = null;
 	
-	//Protocols
+	
+	//UserEvent
 	@SuppressWarnings("unchecked")
-	public String getRelatedEventProtocol(int eventId)
+	public ArrayList<UserEvent> getUserEventsWithSpecificAnswer(int userId,int answer)
 	{
 		startSession();
-		ArrayList<Protocol> p = (ArrayList<Protocol>) session.createQuery(String.format("from Protocols where EventId = %d",eventId)).list();
+		ArrayList<UserEvent> list = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where Answer = %d and UserId = %d", answer,userId)).list();
 		closeSession();
-		return p != null ? (p.size() != 0 ? p.get(0).getProtocolURL() : "") : "";
+		return list;
+	}
+	
+	public UserEvent getSpecificUserEvent(int userId,int eventId)
+	{
+		startSession();
+		@SuppressWarnings("unchecked")
+		ArrayList<UserEvent> list = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where UserId = %d and EventId = %d", userId,eventId)).list();
+		closeSession();
+		return list != null? (list.size()> 0 ? list.get(0) : null) : null;
+	}
+	
+	@SuppressWarnings("unchecked")
+	public ArrayList<UserEvent> getParticipants(int eventId)
+	{
+		startSession();
+		ArrayList<UserEvent> list = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where Answer = 1 and EventId = %d", eventId)).list();
+		closeSession();
+		return list;
+	}
+	
+	//User
+	public UserData getUserDataFromDBUserEntity(User user)
+	{
+		DataSet ds = getDataSetByUserId(user.getId());
+		return new UserData(user.getId(),user.getFirstName(), user.getLastName(), user.getEmail(),user.getPhoneNumber(),ds == null ? 0 : ds.getLengthOfRecorcds());
+	}
+	
+	@SuppressWarnings("unchecked")
+	public LinkedList<UserData> getParticipants(int eventId,Boolean onlyConfirmed)
+	{
+		ArrayList<UserEvent> userEventList = null;
+		startSession();
+		if(onlyConfirmed)
+			userEventList = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where EventId = %d and Answer = %d",eventId,1 )).list();
+		else
+			userEventList = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where EventId = %d",eventId)).list();
+		closeSession();
+		LinkedList<UserData> usersDataList = new LinkedList<>();
+		userEventList.forEach(uel -> {
+			usersDataList.add(getUserDataFromDBUserEntity(uel.getUser()));
+		});
+		return usersDataList;
+		
+	}
+	
+	@SuppressWarnings("unchecked")
+	public User getUser(String email)
+	{
+		startSession();
+		ArrayList<User> list = (ArrayList<User>)session.createQuery("from Users where Email like '%"+email+"%'").list();
+		closeSession();
+		return list != null ? (list.size() != 0 ? list.get(0) : null) : null;
+	}
+	
+	//DataSet
+	public DataSet getDataSetByUserId(int userId)
+	{
+		startSession();
+		@SuppressWarnings("unchecked")
+		ArrayList<DataSet> ds = (ArrayList<DataSet>) session.createQuery(String.format("from DataSets where UserId = %d",userId)).list();
+		closeSession();
+		return ds != null ? (ds.size() != 0 ? ds.get(0) : null) : null;
 	}
 	
 	//Event
-	
-	@SuppressWarnings("unchecked")
-	public ArrayList<User> getPariticpants(int eventId)
+	public EventData getEventDataByEvent(Event e, List<UserData> udlist)
 	{
-		startSession();
-		ArrayList<UserEvent> list = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where EventId = %d and Answer = 1", eventId)).list();
-		closeSession();
-		if(list == null)
-			return null;
-		ArrayList<User> users = new ArrayList<>();
-		list.forEach(ue -> {
-			users.add(ue.getUser());
-		});
-		return users;
+		return new EventData(e.getId(),
+				e.getTitle(),
+				e.getDateCreated(),
+				udlist,
+				e.getAdmin().getEmail(),
+				e.getDescription(),
+				e.getIsFinished()== 1 ? false :true,
+						e.getIsConverted() == 1 ? true : false);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -64,51 +123,23 @@ public class DBManager {
 		});
 		LinkedList<EventData> eventDataList = new LinkedList<>();
 		eventsList.forEach(e -> {
-			List<User> l = getPariticpants(e.getId());
-			LinkedList<UserData> userDataList = new LinkedList<>();
-			l.forEach(u -> {
-				userDataList.add(getUserDataFromDBUserEntity(u));
-			});
-			getEventDataByEvent(e, userDataList);
+			LinkedList<UserData> userDataList = getParticipants(e.getId(), true);
+			eventDataList.add(getEventDataByEvent(e, userDataList));
 		});
 		return eventDataList;
-		/*LinkedList<EventData> eventsList = new LinkedList<>();
-		userEventList.forEach(ue->{
-			ArrayList<User> usersList = getPariticpants(ue.getEvent().getId());
-			ArrayList<UserData> usersDataList = new ArrayList<>();
-			usersList.forEach(u->{
-				usersDataList.add(getUserDataFromDBUserEntity(u));
-			});
-			eventsList.add(getEventDataByEvent(ue.getEvent(), usersDataList));
-		});*/
-		
-
-
 	}
 	
-	public EventData getEventDataByEvent(Event e, List<UserData> udlist)
-	{
-		return new EventData(e.getId(),
-				e.getTitle(),
-				e.getDateCreated(),
-				udlist,
-				e.getAdmin().getEmail(),
-				e.getDescription(),
-				e.getIsFinished()== 1 ? false :true,
-						e.getIsConverted() == 1 ? true : false);
-	}
-	
-	//User
+	//Credential
 	@SuppressWarnings("unchecked")
-	public Contact getContact(int userId, int friendId)
+	public Credential getCredential(int userId)
 	{
 		startSession();
-		ArrayList<Contact> list = (ArrayList<Contact>)session.createQuery(String.format("from Contacts where UserId = %d and FriendId = %d",userId,friendId)).list();
+		ArrayList<Credential> list = (ArrayList<Credential>)session.createQuery(String.format("from Credentials where UserId = %d", userId)).list();
 		closeSession();
-		return list != null ? (list.size() != 0 ? list.get(0) : null) : null;
-
+		return list != null ? list.get(0) : null;
 	}
 	
+	//Contacts
 	@SuppressWarnings("unchecked")
 	public ArrayList<Contact> getContactsList(int userId)
 	{
@@ -119,93 +150,15 @@ public class DBManager {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public User getUser(String email)
+	public Contact getContact(int userId, int friendId)
 	{
 		startSession();
-		ArrayList<User> list = (ArrayList<User>)session.createQuery("from Users where Email like '%"+email+"%'").list();
+		ArrayList<Contact> list = (ArrayList<Contact>)session.createQuery(String.format("from Contacts where UserId = %d and FriendId = %d",userId,friendId)).list();
 		closeSession();
 		return list != null ? (list.size() != 0 ? list.get(0) : null) : null;
-	}
-	
-	@SuppressWarnings("unchecked")
-	public Credential getCredential(int userId)
-	{
-		startSession();
-		ArrayList<Credential> list = (ArrayList<Credential>)session.createQuery(String.format("from Credentials where UserId = %d", userId)).list();
-		closeSession();
-		return list != null ? list.get(0) : null;
-	}
-	
-	public UserData getUserDataFromDBUserEntity(User user)
-	{
-		DataSet ds = getDataSetByUserId(user.getId());
-		return new UserData(user.getId(),user.getFirstName(), user.getLastName(), user.getEmail(), getProfilePictureUrlByUserId(user.getId()), user.getPhoneNumber(),ds == null ? 0 : ds.getLengthOfRecorcds());
-	}
-	
-	//UserEvent
-	@SuppressWarnings("unchecked")
-	public UserEvent getRelatedUserEvent(int userId,int eventId)
-	{
-		startSession();
-		ArrayList<UserEvent> list = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where UserId = %d and EventId = %d",userId,eventId)).list();
-		closeSession();
-		return list == null ? null : (list.size() == 0 ? null : list.get(0));
-	}
 
-	@SuppressWarnings("unchecked")
-	public ArrayList<UserEvent> getUnAnsweredInvites(int userId)
-	{
-		startSession();
-		ArrayList<UserEvent> list = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where Answer = 0 and UserId = %d", userId)).list();
-		closeSession();
-		return list;
 	}
 	
-	@SuppressWarnings("unchecked")
-	public ArrayList<UserEvent> getParticipantsByEventId(int eventId)
-	{
-		startSession();
-		ArrayList<UserEvent> usersEvent = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where EventId = %d and Answer = 1", eventId)).list();
-		closeSession();
-		return usersEvent;
-	}
-	
-	@SuppressWarnings("unchecked")
-	public ArrayList<UserEvent> getUnAnsweredUserEventByEventId(int eventId)
-	{
-		startSession();
-		ArrayList<UserEvent> usersEvent = (ArrayList<UserEvent>)session.createQuery(String.format("from UserEvents where EventId = %d and Answer = 0", eventId)).list();
-		closeSession();
-		return usersEvent;
-	}
-	
-	
-	//Profile Pictures
-	@SuppressWarnings("unchecked")
-	public ProfilePicture getUserProfilePicture(int userId)
-	{
-		startSession();
-		ArrayList<ProfilePicture> list = (ArrayList<ProfilePicture>)session.createQuery(String.format("from ProfilePictures where UserId = %d", userId)).list();
-		closeSession();
-		return list != null ? (list.size() != 0 ? list.get(0) : null) : null;
-	}
-	
-	public String getProfilePictureUrlByUserId(int userId)
-	{
-		ProfilePicture pp = this.getUserProfilePicture(userId);
-		return pp != null ? pp.getProfilePictureUrl() : "";
-	}
-	
-	//DataSet
-	
-	public DataSet getDataSetByUserId(int userId)
-	{
-		startSession();
-		@SuppressWarnings("unchecked")
-		ArrayList<DataSet> ds = (ArrayList<DataSet>) session.createQuery(String.format("from DataSets where UserId = %d",userId)).list();
-		closeSession();
-		return ds != null ? (ds.size() != 0 ? ds.get(0) : null) : null;
-	}
 	
 	//Core
 	private Transaction startSession()

@@ -1,11 +1,16 @@
 package MVC;
 
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Observable;
@@ -47,8 +52,6 @@ public class Controller implements Observer {
 			return model.AddFriend(socketHandler.getObjectFromString(data, AddFriendRequestData.class),user);// checked
 		case ChangePasswordRequest:
 			return model.ChangePassword(socketHandler.getObjectFromString(data, ChangePasswordRequestData.class),user);// checked
-		case CloseEventRequest:
-			return model.CloseEvent(socketHandler.getObjectFromString(data, CloseEventRequestData.class),user);
 		case ConfirmEvent:
 			return model.JoinEvent(socketHandler.getObjectFromString(data, ConfirmEventRequestData.class),user);
 		case ContactsListRequest:
@@ -57,8 +60,6 @@ public class Controller implements Observer {
 			return model.CreateEvent(socketHandler.getObjectFromString(data, CreateEventRequestData.class),user);
 		case CreateUserRequest:
 			return model.CreateUser(socketHandler.getObjectFromString(data, CreateUserRequestData.class));
-		case DataSetRequest:
-			return model.DataSet(socketHandler.getObjectFromString(data, DataSetRequestData.class), user);
 		case DeclineEvent:
 			return model.DeclineEvent(socketHandler.getObjectFromString(data, DeclineEventRequestData.class),user);
 		case EditContactsListRequest:
@@ -88,12 +89,12 @@ public class Controller implements Observer {
 
 		
 	private void checkIfUserHasInvites(User u) {
-		ArrayList<UserEvent> unAnsweredInvites = model.getDbManager().getUnAnsweredInvites(u.getId());
+		ArrayList<UserEvent> unAnsweredInvites = model.getDbManager().getUserEventsWithSpecificAnswer(u.getId(), 0);
 		if (unAnsweredInvites != null && unAnsweredInvites.size() != 0) {
 			unAnsweredInvites.forEach(i -> {
 				ArrayList<UserData> l = new ArrayList<>();
 				l.add(model.getDbManager().getUserDataFromDBUserEntity(i.getUser()));
-				socketHandler.sendEventInventationToUsers(model.getEventData(i.getEvent(), l), l);
+				socketHandler.sendEventInventationToUsers(model.getDbManager().getEventDataByEvent(i.getEvent(), l), l);
 			});
 		}
 	}
@@ -143,19 +144,23 @@ public class Controller implements Observer {
 					public void run() {
 						// TODO Auto-generated method stub
 						RequestData rd = socketHandler.getObjectFromString(data, RequestData.class);
-						connections.put(rd.getUserEmail(), client);
-						view.printToConsole(rd.getUserEmail()+" Connected");
-						ResponseData resData= instance.execute(data);
-						if(resData.getType() == ResponseType.Login)//Success
-							executionPool.execute(new Runnable() {
-								
-								@Override
-								public void run() {
-									// TODO Auto-generated method stub
-									model.checkAndSendInvitesAfterLogin(client, model.getDbManager().getUser(rd.getUserEmail()));
-								}
-							});
-						socketHandler.sendToClient(client, "Response",resData);//After Adding socket to connection, Handle Request
+						User u = model.getDbManager().getUser(rd.getUserEmail());
+						if(u != null)
+						{							
+							connections.put(u.getEmail(), client);
+							view.printToConsole(rd.getUserEmail()+" Connected");
+							ResponseData resData= instance.execute(data);
+							if(resData.getType() == ResponseType.Login)//Success
+								executionPool.execute(new Runnable() {
+									
+									@Override
+									public void run() {
+										// TODO Auto-generated method stub
+										model.checkAndSendInvitesAfterLogin(client, model.getDbManager().getUser(rd.getUserEmail()));
+									}
+								});
+							socketHandler.sendToClient(client, "Response",resData);//After Adding socket to connection, Handle Request
+						}
 							
 					}
 				});
@@ -269,18 +274,22 @@ public class Controller implements Observer {
 				@Override
 				public void run() {
 					// TODO Auto-generated method stub
-					while(true)
-					{
-						InetAddress addr;
-						try {
-							addr = InetAddress.getByName(url);
-							ServerSocket socket = new ServerSocket(port+1,50,addr);
+					InetAddress addr;
+					try {
+						addr = InetAddress.getByName(url);
+						ServerSocket socket = new ServerSocket(port+1,50,addr);
+						while(true)
+						{
 							Socket cs = socket.accept();
 							handleDataSetRecord(cs);
-						} catch ( IOException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
+							
 						}
+					} catch (UnknownHostException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
 				}
 			});
@@ -289,18 +298,21 @@ public class Controller implements Observer {
 				@Override
 				public void run() {
 					// TODO Auto-generated method stub
-					while(true)
-					{
-						InetAddress addr;
-						try {
-							addr = InetAddress.getByName(url);
-							ServerSocket socket = new ServerSocket(port+2,50,addr);
+					InetAddress addr;
+					try {
+						addr = InetAddress.getByName(url);
+						ServerSocket socket = new ServerSocket(port+2,50,addr);
+						while(true)
+						{
 							Socket cs = socket.accept();
-							handleEventRecord(cs);
-						} catch ( IOException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
+							handleEventRecordRecord(cs);
 						}
+					} catch (UnknownHostException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
 				}
 			});
@@ -308,83 +320,118 @@ public class Controller implements Observer {
 			dataSetThread.start();
 			recordThread.start();
 			
-			/*Thread t = new Thread(new Runnable() {
 
-				@Override
-				public void run() {
-					// TODO Auto-generated method stub
-					try {
-						InetAddress addr = InetAddress.getByName("localhost");//TODO: change to server tomorrow!
-						ServerSocket socket = new ServerSocket(2244,50,addr);
-						Socket cs = socket.accept();
-					    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-				        int reads = cs.getInputStream().read();
-				        while(reads != -1){
-				            baos.write(reads);
-				            reads = cs.getInputStream().read();
-				            System.out.println(reads);
-				        }
-					    byte[] wavFile = baos.toByteArray();
-					} catch (Exception  e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-
-				}
-			});
-			t.start();*/
 		}
 	}
 	
-	private void handleDataSetRecord(Socket sock)
+	private void handleDataSetRecord(Socket sock) 
 	{
-		//Get User UserId(String) From Socket
-		
-		//Get Bytes Array
-		
-		//Leave it to Sahar
-		
-	    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        int reads;
+		System.out.println("DataSet");
+		DataInputStream inFromClient = null;
+		DataOutputStream outToClient = null;
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		try {
-			reads = sock.getInputStream().read();
-			while(reads != -1){
-				baos.write(reads);
-				reads = sock.getInputStream().read();
-				System.out.println(reads);
-			}
-			byte[] wavFile = baos.toByteArray();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	}
-	
-	private void handleEventRecord(Socket sock)
-	{
-		//Get EventId(int) From Socket
-
-		//Get Bytes Array
-		
-		//Leave it to Sahar
-		
-		
-	    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        int reads;
-		try {
+			int userId= 0,length = 0,bytesSize = 0;
+			byte[] arr;
+			String str;
+			inFromClient = new DataInputStream(sock.getInputStream());
+			outToClient = new DataOutputStream(sock.getOutputStream());
 			
-			reads = sock.getInputStream().read();
-			while(reads != -1){
-				baos.write(reads);
-				reads = sock.getInputStream().read();
-				System.out.println(reads);
+			//user ID
+			str = inFromClient.readLine();
+			userId = Integer.parseInt(str);
+			User u = (User) model.getDbManager().get(userId, DBEntityType.User);
+			if(u != null)
+				view.printToConsole(u.getEmail()+" Send DataSetRequest");
+			outToClient.write(1);
+			//Length in seconds
+			str = inFromClient.readLine();
+			length = Integer.parseInt(str);
+			outToClient.write(1);
+			//Byte array count
+			str = inFromClient.readLine();
+			bytesSize = Integer.parseInt(str);
+			outToClient.write(1);
+			
+			arr = new byte[bytesSize];
+			//inFromClient.read(arr, 0, bytesSize);
+			int index = 0;
+			while(index<bytesSize)
+			{
+				arr[index] = inFromClient.readByte();
+				index++;
 			}
-			byte[] wavFile = baos.toByteArray();
+			outToClient.write(1);
+			inFromClient.close();
+			outToClient.close();
+			sock.close();
+			model.DataSet(userId, length, arr);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+			try {
+				inFromClient.close();
+				outToClient.close();
+				sock.close();
+			} catch (IOException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 		}
 	}
 
+	private void handleEventRecordRecord(Socket sock) 
+	{
+		System.out.println("Event record");
+		DataInputStream inFromClient = null;
+		DataOutputStream outToClient = null;
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		try {
+			int eventId= 0,length = 0,bytesSize = 0;
+			byte[] arr;
+			String str;
+			inFromClient = new DataInputStream(sock.getInputStream());
+			outToClient = new DataOutputStream(sock.getOutputStream());
+			
+			//event ID
+			str = inFromClient.readLine();
+			eventId = Integer.parseInt(str);
+			Event e = (Event) model.getDbManager().get(eventId, DBEntityType.Event);
+			if(e != null)
+				view.printToConsole(e.getAdmin().getEmail()+" Send CloseEventRequest");
+			outToClient.write(1);
+			//Byte array count
+			str = inFromClient.readLine();
+			bytesSize = Integer.parseInt(str);
+			outToClient.write(1);
+			
+			arr = new byte[bytesSize];
+			//inFromClient.read(arr, 0, bytesSize);
+			int index = 0;
+			while(index<bytesSize)
+			{
+				arr[index] = inFromClient.readByte();
+				index++;
+			}
+			Path path = Paths.get("C:\\Users\\project06\\Desktop\\ProdTest.wav");
+			Files.write(path, arr);	
+			outToClient.write(1);
+			inFromClient.close();
+			outToClient.close();
+			sock.close();
+			model.CloseEvent(eventId, arr);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			try {
+				inFromClient.close();
+				outToClient.close();
+				sock.close();
+			} catch (IOException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
+		}
+	}
 
 }

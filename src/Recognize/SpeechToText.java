@@ -20,12 +20,14 @@ import com.google.cloud.speech.v1.RecognitionConfig.AudioEncoding;
 import com.google.protobuf.ByteString;
 
 public class SpeechToText {
-
+	private String path;
+	
 	public String getConvertText(byte[] data) throws Exception {
 		String translatedRow = null;
+		
 
 		// Configure GoogleCredential
-		FileInputStream credentialsStream = new FileInputStream("C:\\Users\\project06\\Desktop\\GoogleCer.json");
+		FileInputStream credentialsStream = new FileInputStream(path+"GoogleCer.json");
 		GoogleCredentials credentials = GoogleCredentials.fromStream(credentialsStream);
 		FixedCredentialsProvider credentialsProvider = FixedCredentialsProvider.create(credentials);
 
@@ -40,7 +42,7 @@ public class SpeechToText {
 
 		// Configure request with local raw PCM audio
 		RecognitionConfig config = RecognitionConfig.newBuilder().setEncoding(AudioEncoding.ENCODING_UNSPECIFIED)
-				.setLanguageCode("he-il").setSampleRateHertz(16000).build();
+				.setLanguageCode("he-il").setSampleRateHertz(0).build();
 		RecognitionAudio audio = RecognitionAudio.newBuilder().setContent(audioBytes).build();
 
 		// Use blocking call to get audio transcript
@@ -56,9 +58,9 @@ public class SpeechToText {
 		return translatedRow;
 	}
 
-	public SpeechToText() {
-
+	public SpeechToText(String path) {
 		// TODO Auto-generated constructor stub
+		this.path = path;
 	}
 
 }

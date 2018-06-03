@@ -48,7 +48,7 @@ public class SocketHandler {
 	public void sendEventCloseNotificationToUsers(EventData eventData, List<UserData> participants) {
 		participants.forEach(p -> {
 			SocketIOClient sock = connections.get(p.getEmail());
-			if (sock != null) {
+			if (sock != null && !Model.isEmailsEquals(eventData.getAdminMail(), p.getEmail())) {
 				sendToClient(sock, "Notification", new EventCloseNotificationData(eventData));
 			}
 		});
@@ -57,7 +57,7 @@ public class SocketHandler {
 	public void sendUserEventNotification(EventData eventData,List<UserData> list, UserData userData, Boolean isJoin) {
 		list.forEach(u -> {
 			SocketIOClient sock = connections.get(u.getEmail());
-			if (sock != null) {
+			if (sock != null && !Model.isEmailsEquals(userData.getEmail(), u.getEmail())) {
 				sendToClient(sock, "Notification",
 						isJoin ? new UserJoinEventNotification(eventData, userData)
 								: new UserLeaveEventNotification(eventData, userData));
